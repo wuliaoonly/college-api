@@ -1,0 +1,34 @@
+import {readFile,mkdir} from 'node:fs/promises';
+import {chromium} from 'playwright';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const root=path.resolve('..');
+const log=await readFile(path.join(root,'.tools/private/harness-runtime-check.log'),'utf8');
+const url=log.match(/http:\/\/127\.0\.0\.1:3089\/\?token=[^\s]+/)?.[0];
+assert(url,'Harness did not provide a local authenticated URL');
+const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+try {
+  const page=await browser.newPage({viewport:{width:1365,height:1000}}),errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.goto(url);await page.waitForLoadState('networkidle');
+  assert(!/authentication required/i.test(await page.locator('body').innerText()));
+  const onboarding=page.getByRole('button',{name:'继续',exact:true});
+  if(await onboarding.isVisible()) await onboarding.click();
+  assert(await page.getByRole('button',{name:/选择模型，当前 DeepSeek/}).isVisible(),'DeepSeek default model not selected');
+  await mkdir(path.join(root,'artifacts'),{recursive:true});
+  await page.screenshot({path:path.join(root,'artifacts/harness-local-ui.png'),fullPage:true});
+  await page.getByRole('button',{name:'设置',exact:true}).click();
+  await page.getByRole('button',{name:'模型',exact:true}).click();
+  await page.getByText('DeepSeek',{exact:true}).first().waitFor();
+  await page.getByText('编辑',{exact:true}).first().click();
+  await page.waitForTimeout(300);
+  const inputValues=await page.locator('input').evaluateAll(inputs=>inputs.map(input=>input.value));
+  assert(!inputValues.includes('fixture-harness-runtime-only'),'Credential populated a UI input');
+  assert(!(await page.locator('body').innerText()).includes('fixture-harness-runtime-only'),'Credential appeared in interface');
+  await page.screenshot({path:path.join(root,'artifacts/harness-local-model-settings.png'),fullPage:true});
+  const environmentCredential=page.getByPlaceholder(/启动环境/);
+  assert(await environmentCredential.isVisible(),'Launcher credential was not discovered from its process environment');
+  assert(!(await environmentCredential.isEditable()),'Environment credential should remain read-only');
+  assert.deepEqual(errors,[]);
+  console.log('PASS: official Harness launched through the installer launcher and loaded its authenticated local interface.');
+} finally {await browser.close();}

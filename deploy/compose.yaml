@@ -1,0 +1,44 @@
+name: campus-ai
+services:
+  portal:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.portal
+    env_file: ../.env
+    environment:
+      DATA_DIR: /app/data
+      APP_ENV: production
+    volumes:
+      - portal_data:/app/data
+      - portal_backups:/app/backups
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/portal-api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "3"}
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      portal: {condition: service_healthy}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "3"}
+volumes:
+  portal_data:
+    name: ${PORTAL_DATA_VOLUME:-campus-ai_portal_data}
+  portal_backups:
+  caddy_data:
+  caddy_config:

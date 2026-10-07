@@ -1,0 +1,25 @@
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+	}
+	@control path /portal-api/*
+	handle @control {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy portal:8000
+	}
+	@model path /v1/* /anthropic/*
+	handle @model {
+		respond "Model traffic connects directly to the provider." 404
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
